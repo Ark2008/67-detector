@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-six_seven}
+      POSTGRES_USER: ${POSTGRES_USER:-six_seven}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+
+# TODO: добавить сервисы backend/frontend при согласовании контейнерного запуска.
