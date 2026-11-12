@@ -1,48 +1,48 @@
 from collections.abc import Iterator
-from dataclasses import dataclass
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_game_session_repository
-from app.main import app
-
-
-@dataclass(slots=True)
-class StoredSession:
-    nickname: str
-    score: int = 0
-    finished: bool = False
-
-
-class InMemoryGameSessionRepository:
-    """Хранит сессии в памяти, чтобы тесты WebSocket не требовали PostgreSQL."""
-
-    def __init__(self) -> None:
-        self.sessions: dict[int, StoredSession] = {}
-
-    async def create(self, nickname: str) -> int:
-        session_id = len(self.sessions) + 1
-        self.sessions[session_id] = StoredSession(nickname)
-        return session_id
-
-    async def increment_score(self, session_id: int) -> int:
-        session = self.sessions[session_id]
-        session.score += 1
-        return session.score
-
-    async def finish(self, session_id: int) -> None:
-        self.sessions[session_id].finished = True
+from app.config import Settings
+from app.main import create_app
+from app.repositories.game import PlayerData, SessionData
+from tests.fakes import FakeClock, InMemoryGameRepository
 
 
 @pytest.fixture
-def repository() -> InMemoryGameSessionRepository:
-    return InMemoryGameSessionRepository()
+def repository() -> InMemoryGameRepository:
+    return InMemoryGameRepository()
 
 
 @pytest.fixture
-def client(repository: InMemoryGameSessionRepository) -> Iterator[TestClient]:
-    app.dependency_overrides[get_game_session_repository] = lambda: repository
+def clock() -> FakeClock:
+    return FakeClock()
+
+
+@pytest.fixture
+def app_settings() -> Settings:
+    # Значения по умолчанию, без чтения .env; фоновая задача таймаутов в тестах молчит.
+    return Settings(_env_file=None, timeout_check_interval_seconds=3600)
+
+
+@pytest.fixture
+def app(repository: InMemoryGameRepository, clock: FakeClock, app_settings: Settings) -> FastAPI:
+    return create_app(app_settings, repository=repository, clock=clock)
+
+
+@pytest.fixture
+def client(app: FastAPI) -> Iterator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
-    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def player(repository: InMemoryGameRepository) -> PlayerData:
+    return repository.add_player("Петя")
+
+
+@pytest.fixture
+def session(repository: InMemoryGameRepository, player: PlayerData) -> SessionData:
+    """Активная сессия, к которой можно подключаться по WebSocket."""
+    return repository.add_session(player.id)

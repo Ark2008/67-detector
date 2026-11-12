@@ -1,19 +1,41 @@
-"""Зависимости FastAPI. Здесь подменяются mock-реализации на настоящие."""
+"""Зависимости FastAPI. Сами объекты создаются в app.main.create_app и лежат в app.state."""
 
-from app.db import session_factory
-from app.repositories.game_sessions import GameSessionRepository, PostgresGameSessionRepository
-from app.services.vision import DetectorFactory, HandTrackerFactory, SwingGestureDetector, SwingHandTracker
+from typing import Annotated
+
+from fastapi import Depends
+from starlette.requests import HTTPConnection
+
+from app.config import Settings
+from app.repositories.game import GameRepository
+from app.services.connections import ConnectionRegistry
+from app.services.game import Clock
+from app.services.vision import DetectGesture
+
+# HTTPConnection — общий предок Request и WebSocket, поэтому зависимости работают в обоих.
 
 
-def get_game_session_repository() -> GameSessionRepository:
-    return PostgresGameSessionRepository(session_factory)
+def get_settings(connection: HTTPConnection) -> Settings:
+    return connection.app.state.settings
 
 
-def get_hand_tracker_factory() -> HandTrackerFactory:
-    # TODO: заменить на настоящий трекер из cv/hand_tracking, когда он будет готов.
-    return SwingHandTracker
+def get_repository(connection: HTTPConnection) -> GameRepository:
+    return connection.app.state.repository
 
 
-def get_detector_factory() -> DetectorFactory:
-    # TODO: заменить на настоящий детектор из cv/gesture_detector, когда он будет готов.
-    return SwingGestureDetector
+def get_registry(connection: HTTPConnection) -> ConnectionRegistry:
+    return connection.app.state.registry
+
+
+def get_detect_gesture(connection: HTTPConnection) -> DetectGesture:
+    return connection.app.state.detect_gesture
+
+
+def get_clock(connection: HTTPConnection) -> Clock:
+    return connection.app.state.clock
+
+
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+RepositoryDep = Annotated[GameRepository, Depends(get_repository)]
+RegistryDep = Annotated[ConnectionRegistry, Depends(get_registry)]
+DetectGestureDep = Annotated[DetectGesture, Depends(get_detect_gesture)]
+ClockDep = Annotated[Clock, Depends(get_clock)]

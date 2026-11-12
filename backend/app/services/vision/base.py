@@ -1,36 +1,40 @@
-"""Интерфейсы CV-модуля: кадр камеры → координаты рук → засчитан ли жест.
+"""Контракт Backend → CV (docs/contracts.md): окно кадров → распознан ли жест.
 
-Настоящие реализации из cv/ должны реализовать эти же интерфейсы.
-Один экземпляр трекера и детектора живёт одну игровую сессию.
+Типы описаны через dict, чтобы модуль из cv/ не зависел от backend и pydantic:
+кадр выглядит так же, как сообщение `frame` из docs/websocket.md, только без поля `type`.
 """
 
 from collections.abc import Callable
-from typing import Protocol, TypeAlias
+from typing import Literal, TypeAlias, TypedDict
 
-from app.schemas.hands import HandFrame
-
-
-class HandTracker(Protocol):
-    """Поиск рук на кадре камеры (cv/hand_tracking)."""
-
-    def track(self, image: bytes, timestamp_ms: float) -> HandFrame:
-        """Найти руки на кадре.
-
-        `image` — закодированное изображение (JPEG/PNG/WebP) как его прислал браузер.
-        `timestamp_ms` растёт от кадра к кадру (нужно MediaPipe в режиме VIDEO).
-        Если кадр не удалось декодировать — ValueError.
-        """
-        ...
+GESTURE_SIX_SEVEN = "six_seven"
+GESTURE_NONE = "none"
 
 
-class GestureDetector(Protocol):
-    """Детектор жеста 67 (cv/gesture_detector). Может хранить историю кадров."""
-
-    def process(self, frame: HandFrame) -> bool:
-        """Обработать кадр. True — на этом кадре жест засчитан."""
-        ...
+class LandmarkDict(TypedDict):
+    x: float
+    y: float
+    z: float
 
 
-# Фабрики создают новый трекер и детектор на каждое WebSocket-подключение.
-HandTrackerFactory: TypeAlias = Callable[[], HandTracker]
-DetectorFactory: TypeAlias = Callable[[], GestureDetector]
+class HandDict(TypedDict):
+    handedness: Literal["Left", "Right"]
+    score: float
+    landmarks: list[LandmarkDict]  # 21 точка, порядок MediaPipe
+
+
+class FrameDict(TypedDict):
+    timestamp_ms: float
+    hands: list[HandDict]  # 0, 1 или 2 руки
+
+
+class GestureResult(TypedDict):
+    gesture: Literal["six_seven", "none"]
+
+
+# detect_gesture(frames) -> {"gesture": "six_seven" | "none"}
+#
+# frames — скользящее окно последних кадров сессии, от старых к новым, от 1 до
+# FRAME_WINDOW_SIZE штук. Функция без состояния между вызовами: про сессии и cooldown
+# не знает, порог распознавания применяет сама. Вызывается из рабочего потока.
+DetectGesture: TypeAlias = Callable[[list[FrameDict]], GestureResult]
