@@ -2,6 +2,8 @@
 
 Покрывает главный экран: вход игрока, сессия демонстрации, засчитанные жесты. Рейтинг строится агрегацией по `sessions`, отдельной таблицы для него не нужно.
 
+Схема создаётся миграцией Alembic `backend/migrations/versions/0001_create_main_screen_schema.py` (`alembic upgrade head` из `backend/`), модели — в `backend/app/models/`.
+
 ## ER-схема
 
 ```text
@@ -31,7 +33,7 @@ players (1) ──< sessions (N) ──< gesture_events (N)
 | score | INT | NOT NULL, default `0`, CHECK (`score >= 0`) | счётчик засчитанных жестов |
 | started_at | TIMESTAMPTZ | NOT NULL, default `now()` | момент нажатия «Старт» |
 | ended_at | TIMESTAMPTZ | NULL | момент «Стоп» или срабатывания таймаута |
-| last_activity_at | TIMESTAMPTZ | NOT NULL, default `now()` | обновляется на каждый кадр/жест, нужен для watcher'а таймаутов |
+| last_activity_at | TIMESTAMPTZ | NOT NULL, default `now()` | обновляется на жест и на кадры (не чаще раза в ~2 с, см. [websocket.md](websocket.md)), нужен для watcher'а таймаутов |
 
 Индексы: `(player_id)`, `(status, last_activity_at)` — для фоновой задачи, закрывающей зависшие сессии.
 
@@ -59,7 +61,7 @@ FROM players p
 LEFT JOIN sessions s
   ON s.player_id = p.id AND s.status IN ('stopped', 'timeout')
 GROUP BY p.id, p.name
-ORDER BY total_score DESC;
+ORDER BY total_score DESC, best_session_score DESC, p.name;
 ```
 
 Активные (`status = 'active'`) сессии в рейтинг не входят — только завершённые.
@@ -96,3 +98,5 @@ CREATE TABLE gesture_events (
 );
 CREATE INDEX gesture_events_session_idx ON gesture_events (session_id);
 ```
+
+В миграции ограничения названы по общему правилу проекта (`pk_players`, `fk_sessions_player_id_players`, `ck_sessions_status`, `ck_sessions_score` и т. д.), а не именами PostgreSQL по умолчанию; имена индексов — как в DDL выше. `gen_random_uuid()` встроена в PostgreSQL 13+, `pgcrypto` подключается только ради совместимости со старыми версиями.
