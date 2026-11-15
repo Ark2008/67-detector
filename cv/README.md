@@ -1,9 +1,16 @@
 # CV
 
-Python-модуль для отслеживания руки и распознавания жеста Six-seven. Планируется MediaPipe и собственный Gesture Detector. 
+Распознавание жеста Six-seven по координатам рук. Камера и извлечение
+landmarks находятся в отдельном модуле.
 
-Ответственный разработчик: Никита
+Формат входа, результат, параметры окна и проверка ориентации ладоней
+описаны в [контракте Backend → CV](../docs/contracts.md#backend--cv).
 
-- `hand_tracking/` — получение положения руки.
-- `gesture_detector/` — определение жеста по данным отслеживания.
-- `tests/` — тесты pytest.
+## Проверка
+
+Из корня репозитория:
+
+```bash
+python -m pip install -r cv/requirements.txt
+python -m pytest cv/tests -q
+```
