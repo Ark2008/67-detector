@@ -25,14 +25,7 @@ def _points(points, *, world=False):
 
 
 def detect_gesture(frames, *, config: DetectorConfig | None = None) -> dict[str, str]:
-    """Classify the final frame's window, independently on every call.
-
-    Input is a list/tuple of chronological WS frame dictionaries. Milliseconds
-    are converted to seconds. No per-session state is retained. An optional
-    world_landmarks field enables palm_check='up' or 'horizontal'; absent world
-    coordinates never silently disable a requested palm check.
-    Malformed input raises ValueError, suitable for backend invalid_payload.
-    """
+    """Classify the latest frame using only the supplied window."""
     if not isinstance(frames, (list, tuple)):
         raise ValueError("frames must be a list or tuple")
     detector = Gesture67Detector(config)

@@ -1,13 +1,3 @@
-"""Time-based two-hand 6–7 detector (no third-party dependencies).
-
-Input: 21 normalized MediaPipe hand landmarks per detected hand and timestamp.
-Optional strict palm check: corresponding 3D ``hand_world_landmarks`` and
-MediaPipe ``handedness`` labels ("Left" / "Right").
-
-This detector cannot recover a genuinely invisible hand. It retains recent
-movement state through a short occlusion but never invents observations.
-"""
-
 from __future__ import annotations
 
 from collections import deque
@@ -17,7 +7,14 @@ from statistics import median
 from typing import Any, Sequence
 
 
-PALM_INDICES = (0, 5, 9, 13, 17)
+WRIST = 0
+INDEX_MCP = 5
+MIDDLE_MCP = 9
+RING_MCP = 13
+PINKY_MCP = 17
+GEOMETRY_EPSILON = 1e-9
+VARIANCE_EPSILON = 1e-12
+PALM_INDICES = (WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP)
 FINGER_CHAINS = ((5, 6, 7, 8), (9, 10, 11, 12),
                  (13, 14, 15, 16), (17, 18, 19, 20))
 
@@ -119,7 +116,7 @@ def _xy(point: Any) -> tuple[float, float]:
 def _xyz(point: Any) -> tuple[float, float, float]:
     if isinstance(point, dict):
         xyz = (point["x"], point["y"], point["z"])
-    elif hasattr(point, "x") and hasattr(point, "z"):
+    elif all(hasattr(point, axis) for axis in ("x", "y", "z")):
         xyz = (point.x, point.y, point.z)
     else:
         xyz = (point[0], point[1], point[2])
@@ -146,7 +143,7 @@ def _norm(a: tuple[float, float, float]) -> float:
 
 
 def _palm_geometry(world_hand: Sequence[Any], label: str, normal_sign: int):
-    """Return (signed up-facing normal cosine, number of extended fingers).
+    """Return the signed upward normal cosine and world coordinates.
 
     The normal is based on wrist/index/pinky MCPs, then oriented consistently
     using MediaPipe handedness. Y increases DOWN in camera coordinates.
@@ -158,13 +155,13 @@ def _palm_geometry(world_hand: Sequence[Any], label: str, normal_sign: int):
         raise ValueError("Handedness must be Left or Right")
 
     xyz = [_xyz(p) for p in world_hand]
-    across = _subtract(xyz[17], xyz[5])
-    forward = _subtract(xyz[9], xyz[0])
+    across = _subtract(xyz[PINKY_MCP], xyz[INDEX_MCP])
+    forward = _subtract(xyz[MIDDLE_MCP], xyz[WRIST])
     normal_y = across[2] * forward[0] - across[0] * forward[2]
     normal_x = across[1] * forward[2] - across[2] * forward[1]
     normal_z = across[0] * forward[1] - across[1] * forward[0]
     normal_length = _norm((normal_x, normal_y, normal_z))
-    if normal_length < 1e-9:
+    if normal_length < GEOMETRY_EPSILON:
         upness = 0.0
     else:
         handedness_sign = 1 if label == "Right" else -1
@@ -180,7 +177,7 @@ def _straight_finger_count(xyz: Sequence[tuple[float, float, float]],
         length = (_norm(_subtract(xyz[pip], xyz[mcp]))
                   + _norm(_subtract(xyz[dip], xyz[pip]))
                   + _norm(_subtract(xyz[tip], xyz[dip])))
-        if length > 1e-9 and _norm(_subtract(xyz[tip], xyz[mcp])) / length >= min_ratio:
+        if length > GEOMETRY_EPSILON and _norm(_subtract(xyz[tip], xyz[mcp])) / length >= min_ratio:
             count += 1
     return count
 
@@ -191,7 +188,7 @@ def _correlation(xs: list[float], ys: list[float]) -> float | None:
     dy = [y - my for y in ys]
     xx = sum(x * x for x in dx)
     yy = sum(y * y for y in dy)
-    if xx < 1e-12 or yy < 1e-12:
+    if xx < VARIANCE_EPSILON or yy < VARIANCE_EPSILON:
         return None
     return max(-1.0, min(1.0, sum(x * y for x, y in zip(dx, dy)) / sqrt(xx * yy)))
 
@@ -228,17 +225,14 @@ def _count_switches(samples: list[_Frame], threshold: float, min_frames: int,
 
 
 class Gesture67Detector:
-    """Stateful streaming classifier. Use one instance per video stream.
-
-    A positive result is a classification, not a new scoring event.
-    Scoring and cooldown belong exclusively to the backend."""
+    """Streaming two-hand motion classifier."""
 
     def __init__(self, config: DetectorConfig | None = None) -> None:
         self.config = config or DetectorConfig()
         self._samples: deque[_Frame] = deque()
         self._last_timestamp: float | None = None
-        self._last_valid_timestamp: float | None = None
-        self._palm_mismatch_since: float | None = None
+        self._degraded_since: float | None = None
+        self._degradation_kind: str | None = None
         self._pending_palm_samples: list[_Frame] = []
         self._palm_measurements: deque[tuple[float, tuple[float, float], tuple[int, int]]] = deque()
         self._palms_trusted = False
@@ -246,50 +240,45 @@ class Gesture67Detector:
     def reset(self) -> None:
         self._samples.clear()
         self._last_timestamp = None
-        self._last_valid_timestamp = None
-        self._palm_mismatch_since = None
+        self._degraded_since = None
+        self._degradation_kind = None
         self._pending_palm_samples.clear()
         self._palm_measurements.clear()
         self._palms_trusted = False
 
     def _discard_motion(self) -> None:
         self._samples.clear()
-        self._last_valid_timestamp = None
-        self._palm_mismatch_since = None
+        self._degraded_since = None
+        self._degradation_kind = None
         self._pending_palm_samples.clear()
         self._palm_measurements.clear()
         self._palms_trusted = False
 
-    def update(self, hands: Sequence[Sequence[Any]], timestamp_s: float, *,
-               world_hands: Sequence[Sequence[Any]] | None = None,
-               handedness: Sequence[str] | None = None) -> DetectionResult:
-        """Append real detections. Missing frames are tolerated, never extrapolated.
-
-        ``world_hands`` and ``handedness`` must be aligned with ``hands``.
-        The API is backward-compatible when palm_check='off'.
-        """
+    def _validate_timestamp(self, timestamp_s: float) -> float:
         timestamp_s = float(timestamp_s)
         if not isfinite(timestamp_s):
             raise ValueError("Timestamp must be finite")
-        if self._last_timestamp is not None and timestamp_s <= self._last_timestamp:
-            raise ValueError("Timestamps must increase strictly (in seconds)")
+        if self._last_timestamp is not None:
+            if timestamp_s <= self._last_timestamp:
+                raise ValueError("Timestamps must increase strictly (in seconds)")
+            if timestamp_s - self._last_timestamp > self.config.max_gap_s:
+                self._discard_motion()
         self._last_timestamp = timestamp_s
+        return timestamp_s
 
-        if len(hands) != 2:
-            # Key change: do not wipe the gesture on 1–N missed frames.
-            if (self._last_valid_timestamp is not None and
-                    timestamp_s - self._last_valid_timestamp <= self.config.max_gap_s):
-                return DetectionResult(False, "temporary_hand_loss")
-            self._discard_motion()
-            return DetectionResult(False, "need_two_hands")
+    def _within_grace(self, timestamp_s: float, kind: str) -> bool:
+        if self._degraded_since is None:
+            self._degraded_since = timestamp_s
+            self._degradation_kind = kind
+        elif kind == "palm":
+            # Mixed tracking failures share the first onset and the palm grace once orientation fails.
+            self._degradation_kind = "palm"
+        grace = (self.config.max_palm_gap_s if self._degradation_kind == "palm"
+                 else self.config.max_gap_s)
+        return timestamp_s - self._degraded_since <= grace
 
-        centers = [_palm_center(hand) for hand in hands]
-        order = sorted(range(2), key=lambda i: centers[i][0])
-        (left_x, left_y), (right_x, right_y) = (centers[i] for i in order)
-        if right_x - left_x < self.config.min_x_separation:
-            self._discard_motion()
-            return DetectionResult(False, "hands_too_close")
-
+    def _check_palms(self, world_hands, handedness, order, timestamp_s,
+                     left_y, right_y):
         palm_scores = None
         finger_counts = None
         smoothed_scores = None
@@ -297,15 +286,13 @@ class Gesture67Detector:
             if (world_hands is None or handedness is None or
                     len(world_hands) != 2 or len(handedness) != 2):
                 self._discard_motion()
-                return DetectionResult(False, "missing_palm_data")
+                return DetectionResult(False, "missing_palm_data"), {}
             geom = [_palm_geometry(world_hands[i], handedness[i],
                                    self.config.palm_normal_sign) for i in order]
             palm_scores = (geom[0][0], geom[1][0])
             finger_counts = tuple(_straight_finger_count(g[1], self.config.min_finger_extension_ratio)
                                   for g in geom)
 
-            # MediaPipe world-landmark normals/handedness can flip for 1-3 frames
-            # during a wrist rotation. A rolling median removes isolated outliers.
             self._palm_measurements.append((timestamp_s, palm_scores, finger_counts))
             while (self._palm_measurements and timestamp_s - self._palm_measurements[0][0]
                    > self.config.palm_smoothing_s):
@@ -315,9 +302,6 @@ class Gesture67Detector:
             smoothed_fingers = tuple(float(median(obs[2][j] for obs in self._palm_measurements))
                                      for j in range(2))
 
-            # Two thresholds prevent oscillation at the acceptance boundary:
-            # it takes a strong up score to start a gesture, but a weak/sideways
-            # score for a frame or two does not immediately suspend it.
             up_threshold = (self.config.palm_hold_score if self._palms_trusted
                             else self.config.min_palm_up_score)
             finger_threshold = (self.config.finger_hold_count if self._palms_trusted
@@ -328,48 +312,39 @@ class Gesture67Detector:
             fingers_ok = all(n >= finger_threshold for n in smoothed_fingers)
             if not (orientation_ok and fingers_ok):
                 self._palms_trusted = False
-                if self._palm_mismatch_since is None:
-                    self._palm_mismatch_since = timestamp_s
-                # Keep real movement positions provisionally, but don't emit a
-                # detection until both palms have recovered to the valid state.
                 self._pending_palm_samples.append(
                     _Frame(timestamp_s, left_y, right_y, verified_palm=False)
                 )
                 details = dict(palm_up_scores=palm_scores, straight_fingers=finger_counts,
                                smoothed_palm_scores=smoothed_scores)
-                if (self._last_valid_timestamp is not None and
-                        timestamp_s - self._palm_mismatch_since <= self.config.max_palm_gap_s and
-                        timestamp_s - self._last_valid_timestamp <= self.config.max_gap_s):
+                if self._samples and self._within_grace(timestamp_s, "palm"):
                     reason = "temporary_palm_mismatch" if not orientation_ok else "temporary_finger_mismatch"
-                    return DetectionResult(False, reason, **details)
+                    return DetectionResult(False, reason, **details), details
                 self._discard_motion()
                 return DetectionResult(False, "palms_not_up" if not orientation_ok
-                                       else "fingers_not_open", **details)
+                                       else "fingers_not_open", **details), details
             self._palms_trusted = True
 
-        if (self._last_valid_timestamp is not None and
-                timestamp_s - self._last_valid_timestamp > self.config.max_gap_s):
-            self._discard_motion()
-        elif self._pending_palm_samples:
-            # Accept buffered coordinates only if the orientation recovered
-            # within the grace period. No gesture is emitted on invalid frames.
-            if (self._palm_mismatch_since is not None and
-                    timestamp_s - self._palm_mismatch_since <= self.config.max_palm_gap_s):
+        return None, dict(palm_up_scores=palm_scores, straight_fingers=finger_counts,
+                          smoothed_palm_scores=smoothed_scores)
+
+    def _append_sample(self, timestamp_s, left_y, right_y):
+        if self._degraded_since is not None:
+            if self._within_grace(timestamp_s, self._degradation_kind):
                 self._samples.extend(self._pending_palm_samples)
             else:
                 self._discard_motion()
-        self._palm_mismatch_since = None
+        self._degraded_since = None
+        self._degradation_kind = None
         self._pending_palm_samples.clear()
-        self._last_valid_timestamp = timestamp_s
         self._samples.append(_Frame(timestamp_s, left_y, right_y))
         while self._samples and timestamp_s - self._samples[0].time_s > self.config.window_s:
             self._samples.popleft()
+
+    def _classify_motion(self, timestamp_s, details):
         samples = list(self._samples)
-        details = {"palm_up_scores": palm_scores, "straight_fingers": finger_counts,
-                   "smoothed_palm_scores": smoothed_scores}
-        # The smoothed estimate is trustworthy enough to RETAIN movement, but
-        # never award a detection on a frame whose RAW hand normal strongly
-        # points down. This is not a reset; the next good frame can complete it.
+        palm_scores = details["palm_up_scores"]
+        finger_counts = details["straight_fingers"]
         if (self.config.palm_check == "up" and palm_scores is not None
                 and any(score <= -self.config.min_palm_up_score for score in palm_scores)):
             return DetectionResult(False, "palm_outlier_ignored", **details)
@@ -380,8 +355,6 @@ class Gesture67Detector:
                 timestamp_s - samples[0].time_s < self.config.min_observation_s):
             return DetectionResult(False, "collecting_frames", **details)
 
-        # A single good frame between mostly downward-facing frames must not
-        # turn an entire incorrect gesture into a valid one.
         if (self.config.palm_check != "off" and
                 sum(f.verified_palm for f in samples) / len(samples)
                 < self.config.min_valid_palm_fraction):
@@ -414,3 +387,27 @@ class Gesture67Detector:
 
         return DetectionResult(True, "gesture_67", switches, relative_motion, corr,
                                **details)
+
+    def update(self, hands: Sequence[Sequence[Any]], timestamp_s: float, *,
+               world_hands: Sequence[Sequence[Any]] | None = None,
+               handedness: Sequence[str] | None = None) -> DetectionResult:
+        timestamp_s = self._validate_timestamp(timestamp_s)
+        if len(hands) != 2:
+            if self._samples and self._within_grace(timestamp_s, "hands"):
+                return DetectionResult(False, "temporary_hand_loss")
+            self._discard_motion()
+            return DetectionResult(False, "need_two_hands")
+
+        centers = [_palm_center(hand) for hand in hands]
+        order = sorted(range(2), key=lambda i: centers[i][0])
+        (left_x, left_y), (right_x, right_y) = (centers[i] for i in order)
+        if right_x - left_x < self.config.min_x_separation:
+            self._discard_motion()
+            return DetectionResult(False, "hands_too_close")
+
+        rejected, details = self._check_palms(
+            world_hands, handedness, order, timestamp_s, left_y, right_y)
+        if rejected is not None:
+            return rejected
+        self._append_sample(timestamp_s, left_y, right_y)
+        return self._classify_motion(timestamp_s, details)

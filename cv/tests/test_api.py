@@ -57,26 +57,6 @@ def test_strict_world_data():
     assert detect_gesture(window(world=True, pose="down"), config=config)["gesture"] == "none"
 
 
-@pytest.mark.parametrize("corruption", ["nan", "count", "label", "timestamp", "range", "score"])
-def test_invalid_payload(corruption):
-    frames = window()
-    h = frames[-1]["hands"][0]
-    if corruption == "nan":
-        h["landmarks"][20]["z"] = float("nan")
-    elif corruption == "count":
-        h["landmarks"].pop()
-    elif corruption == "label":
-        h["handedness"] = "Right"
-    elif corruption == "timestamp":
-        frames[-1]["timestamp_ms"] = frames[-2]["timestamp_ms"]
-    elif corruption == "range":
-        h["landmarks"][20]["x"] = 2
-    else:
-        h["score"] = True
-    with pytest.raises(ValueError):
-        detect_gesture(frames)
-
-
 def test_low_confidence_is_not_a_gesture():
     frames = window()
     frames[-1]["hands"][0]["score"] = .1

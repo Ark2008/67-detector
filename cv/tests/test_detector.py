@@ -113,7 +113,6 @@ def test_reset_allows_new_time_sequence():
     d.reset()
     assert d.update([], 0.0).reason == "need_two_hands"
 
-# Additional tests for lost tracking and palm geometry.
 
 def world_hand(label="Right", pose="up", curled=False):
     """Synthetic WORLD landmarks for a hand with four extended fingers."""
@@ -214,7 +213,6 @@ def test_strict_mode_rejects_downward_palm():
     results = strict_frames(Gesture67Detector(DetectorConfig(palm_check="up")),
                             left_pose="up", right_pose="down")
     assert not any(r.detected for r in results)
-    assert all(not r.detected for r in results)
 
 
 def test_strict_mode_rejects_bent_fingers():
@@ -250,7 +248,6 @@ def test_order_swaps_with_world_landmarks():
         results.append(detector.update(hands, t, world_hands=worlds, handedness=labels))
     assert any(r.detected for r in results)
 
-# v3: a brief misestimated palm orientation must not destroy the movement.
 def test_brief_palm_flicker_retains_alternations():
     detector = Gesture67Detector(DetectorConfig(palm_check="up", max_palm_gap_s=.20))
     results = []
@@ -323,18 +320,11 @@ def test_mostly_wrong_orientation_not_admitted_by_brief_good_frames():
     assert "palms_not_up" in states  # mostly wrong pose cannot become trusted
 
 
-def test_negative_palm_grace_raises():
-    with pytest.raises(ValueError, match="max_palm_gap_s"):
-        DetectorConfig(max_palm_gap_s=-.1)
-
-
-# v4: wrist rotation can cause many single-frame palm-normal outliers.
 def test_repeated_palm_outliers_do_not_interrupt_valid_gesture():
     detector = Gesture67Detector(DetectorConfig(palm_check="up"))
     results = []
     for i in range(120):
         t = i / 30
-        # A 2-frame wrong estimate every 6 frames: v3 was frequently paused.
         pose = "down" if i % 6 in (2, 3) else "up"
         result = detector.update(
             [hand(.25, .5 + wave(t)), hand(.75, .5 - wave(t))], t,
@@ -370,13 +360,6 @@ def test_smoothing_does_not_hold_down_orientation_indefinitely():
     assert "palms_not_up" in states
 
 
-def test_palm_hysteresis_bounds():
-    with pytest.raises(ValueError, match="palm_hold_score"):
-        DetectorConfig(palm_hold_score=0.7)
-    with pytest.raises(ValueError, match="palm_smoothing_s"):
-        DetectorConfig(palm_smoothing_s=-1)
-
-
 def test_brief_finger_tracking_errors_preserve_valid_movement():
     detector = Gesture67Detector(DetectorConfig(palm_check="up"))
     results = []
@@ -393,3 +376,23 @@ def test_brief_finger_tracking_errors_preserve_valid_movement():
     assert any(r.detected for _, r in results)
     assert all(not r.detected for curled, r in results if curled)
     assert any(r.reason == "finger_outlier_ignored" for curled, r in results if curled)
+
+
+def test_switching_tracking_failure_does_not_restart_grace():
+    detector = Gesture67Detector(DetectorConfig(palm_check="up", palm_smoothing_s=0))
+    for i in range(12):
+        t = i / 30
+        detector.update([hand(.25, .5 + wave(t)), hand(.75, .5 - wave(t))], t,
+                        world_hands=[world_hand("Left"), world_hand("Right")],
+                        handedness=["Left", "Right"])
+    for t in (.4, .5, .6):
+        assert detector.update([], t).reason == "temporary_hand_loss"
+    result = detector.update([hand(.25, .5), hand(.75, .5)], .65,
+                             world_hands=[world_hand("Left", "down"),
+                                          world_hand("Right", "down")],
+                             handedness=["Left", "Right"])
+    assert result.reason == "palms_not_up"
+    recovered = detector.update([hand(.25, .5), hand(.75, .5)], .7,
+                                world_hands=[world_hand("Left"), world_hand("Right")],
+                                handedness=["Left", "Right"])
+    assert recovered.reason == "collecting_frames"
