@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from app.repositories.game import PlayerData, SessionData
+from app.services.vision import stub_detect_gesture
 from tests.fakes import FakeClock, InMemoryGameRepository
 
 
@@ -28,7 +29,7 @@ def app_settings() -> Settings:
 
 @pytest.fixture
 def app(repository: InMemoryGameRepository, clock: FakeClock, app_settings: Settings) -> FastAPI:
-    return create_app(app_settings, repository=repository, clock=clock)
+    return create_app(app_settings, repository=repository, clock=clock, detect_gesture=stub_detect_gesture)
 
 
 @pytest.fixture
@@ -44,5 +45,4 @@ def player(repository: InMemoryGameRepository) -> PlayerData:
 
 @pytest.fixture
 def session(repository: InMemoryGameRepository, player: PlayerData) -> SessionData:
-    """Активная сессия, к которой можно подключаться по WebSocket."""
     return repository.add_session(player.id)

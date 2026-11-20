@@ -16,6 +16,10 @@ class SessionNotActiveError(Exception):
     """Сессия уже завершена («Стоп» или таймаут): кадры больше не принимаются."""
 
 
+class FrameOrderError(ValueError):
+    """Временные метки кадров должны возрастать внутри окна CV."""
+
+
 @dataclass(slots=True)
 class SessionGame:
     """Обработка кадров одного WebSocket-подключения: окно кадров → CV → анти-дребезг → БД.
@@ -45,7 +49,8 @@ class SessionGame:
 
         SessionNotActiveError — сессию успели завершить, пока соединение было открыто.
         """
-        # В CV уходит кадр в том же виде, что прислал клиент, без служебного поля type.
+        if self._frames and frame.timestamp_ms <= self._frames[-1]["timestamp_ms"]:
+            raise FrameOrderError("timestamp_ms must increase within the frame window")
         self._frames.append(frame.model_dump(mode="json", exclude={"type"}))
 
         if not self._is_cooling_down() and await self._is_gesture():

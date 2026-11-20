@@ -27,7 +27,6 @@ async def stop_session(
     session = await repository.stop_session(session_id)
     if session is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session_not_found")
-    # Клиент получает session_state в сокет, после чего сокет закрывается.
     await registry.close_session(session)
     return SessionStoppedResponse(
         session_id=session.id,

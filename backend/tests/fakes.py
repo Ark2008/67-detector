@@ -94,8 +94,6 @@ class InMemoryGameRepository:
             )
         return sorted(rows, key=lambda row: (-row.total_score, -row.best_session_score, row.name))
 
-    # Помощники тестов: подготовить данные в обход API.
-
     def add_player(self, name: str) -> PlayerData:
         player = PlayerData(id=uuid.uuid4(), name=name, created_at=_now())
         self.players[player.id] = player

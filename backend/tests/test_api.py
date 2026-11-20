@@ -7,8 +7,6 @@ from app.models import SessionStatus
 from app.repositories.game import PlayerData, SessionData
 from tests.fakes import InMemoryGameRepository
 
-# POST /players
-
 
 def test_new_player_is_created(client: TestClient, repository: InMemoryGameRepository) -> None:
     response = client.post("/players", json={"name": "Петя"})
@@ -34,9 +32,6 @@ def test_invalid_player_name_is_rejected(client: TestClient, name: str) -> None:
     assert client.post("/players", json={"name": name}).status_code == 422
 
 
-# POST /sessions
-
-
 def test_session_is_started(client: TestClient, player: PlayerData) -> None:
     response = client.post("/sessions", json={"player_id": str(player.id)})
 
@@ -56,9 +51,6 @@ def test_session_for_unknown_player_is_not_started(client: TestClient) -> None:
 
 def test_session_with_invalid_player_id_is_rejected(client: TestClient) -> None:
     assert client.post("/sessions", json={"player_id": "not-a-uuid"}).status_code == 422
-
-
-# POST /sessions/{session_id}/stop
 
 
 def test_session_is_stopped(client: TestClient, session: SessionData) -> None:
@@ -99,9 +91,6 @@ def test_stop_of_unknown_session_returns_404(client: TestClient) -> None:
     assert response.json() == {"detail": "session_not_found"}
 
 
-# GET /ratings
-
-
 def test_ratings_are_sorted_by_total_score(client: TestClient, repository: InMemoryGameRepository) -> None:
     petya = repository.add_player("Петя")
     masha = repository.add_player("Маша")
@@ -126,9 +115,6 @@ def test_ratings_are_sorted_by_total_score(client: TestClient, repository: InMem
 
 def test_empty_ratings(client: TestClient) -> None:
     assert client.get("/ratings").json() == {"players": []}
-
-
-# CORS
 
 
 def test_frontend_origin_is_allowed(client: TestClient) -> None:

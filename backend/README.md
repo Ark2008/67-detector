@@ -41,7 +41,7 @@ FastAPI-приложение главного экрана: REST (игрок, с
    alembic upgrade head
    ```
 
-3. Запустите сервер: `uvicorn app.main:app --reload`. Описание REST — на http://localhost:8000/docs.
+3. Из `backend/` запустите `python -m uvicorn app.main:app --app-dir .. --reload`, чтобы Python видел пакет `cv` в корне проекта. Описание REST — на http://localhost:8000/docs.
 
 Сервер нужно запускать одним процессом (без `--workers`): открытые сокеты хранятся в памяти процесса.
 
@@ -83,7 +83,7 @@ GET /ratings ->
 Жесты засчитываются раз в 1,5 секунды — это работает cooldown.
 
 - `--no-stop` — оборвать сокет без «Стоп»: через ~30 секунд сессия получит статус `timeout`.
-- `--print-sample` — напечатать три готовых сообщения `frame` для Postman или websocat: после третьего придёт `gesture_detected`.
+- `--print-sample` — напечатать последовательность сообщений `frame` с контрольным движением для Postman или websocat.
 - Остальные параметры (`--duration`, `--fps`, `--frequency`, `--url`) — в `python scripts/ws_client.py --help`.
 
 Данные в PostgreSQL (из корня репозитория):
@@ -101,8 +101,7 @@ ruff check . && ruff format --check .
 
 `tests/test_postgres_repository.py` работает с настоящей БД и пропускается, если PostgreSQL не запущен или миграции не применены. Остальным тестам БД не нужна: они используют хранилище в памяти (`tests/fakes.py`).
 
-## Подключение настоящего CV-модуля
+## Распознавание жеста
 
-Сейчас вместо CV работает заглушка `app/services/vision/stub.py`: она считает жестом «качели» — два взмаха подряд, когда выше оказывается то левая, то правая рука (сравнивается высота запястий).
-
-Настоящий модуль должен дать функцию с той же сигнатурой — `detect_gesture(frames: list[dict]) -> dict`, подробности в [contracts.md](../docs/contracts.md). Чтобы подключить её, замените `default_detect_gesture` в `app/services/vision/__init__.py`. Буфер кадров, cooldown, запись в БД и WebSocket менять не нужно.
+Сервер передаёт окно координат в `cv.gesture_detector.detect_gesture`.
+Игровые тесты могут подменить детектор через аргумент `detect_gesture` фабрики `create_app`.

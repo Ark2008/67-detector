@@ -119,7 +119,6 @@ class PostgresGameRepository:
             return None if session is None else _session_data(session)
 
     async def stop_session(self, session_id: uuid.UUID) -> SessionData | None:
-        # Идемпотентность: строка меняется, только если сессия ещё активна.
         stmt = (
             update(GameSession)
             .where(GameSession.id == session_id, GameSession.status == SessionStatus.ACTIVE.value)
@@ -176,7 +175,6 @@ class PostgresGameRepository:
         best_session_score = func.coalesce(func.max(GameSession.score), 0).label("best_session_score")
         stmt = (
             select(Player.id, Player.name, total_score, best_session_score)
-            # Активные сессии в рейтинг не входят — только завершённые.
             .outerjoin(
                 GameSession,
                 and_(GameSession.player_id == Player.id, GameSession.status.in_(FINISHED_STATUSES)),

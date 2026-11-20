@@ -22,7 +22,6 @@ class GameSession(Base):
         CheckConstraint("status IN ('active', 'stopped', 'timeout')", name="status"),
         CheckConstraint("score >= 0", name="score"),
         Index("sessions_player_idx", "player_id"),
-        # Для фоновой задачи, закрывающей зависшие сессии.
         Index("sessions_active_watch_idx", "status", "last_activity_at"),
     )
 
