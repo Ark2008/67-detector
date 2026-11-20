@@ -56,7 +56,6 @@ async def make_player(
 
 
 async def set_idle(session_factory: SessionFactory, session_id: uuid.UUID, seconds: float) -> None:
-    """Сдвинуть last_activity_at сессии в прошлое."""
     stmt = (
         update(GameSession)
         .where(GameSession.id == session_id)

@@ -1,0 +1,38 @@
+x-runtime: &runtime
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "5m"
+      max-file: "3"
+
+services:
+  db:
+    <<: *runtime
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD on the VDS}
+
+  backend:
+    <<: *runtime
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD on the VDS}
+
+  frontend:
+    <<: *runtime
+    build:
+      args:
+        VITE_API_URL: https://${SITE_ADDRESS:?Set SITE_ADDRESS to the public hostname}/api
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?Set SITE_ADDRESS to the public hostname}
+    ports: !override
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

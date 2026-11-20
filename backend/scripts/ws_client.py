@@ -6,7 +6,7 @@ POST /players → POST /sessions → WebSocket /ws/sessions/{session_id} с ка
 Запуск из backend/ при работающем сервере:
     python scripts/ws_client.py --name Vasya
     python scripts/ws_client.py --no-stop        # оборвать сокет без «Стоп»: сессию закроет таймаут
-    python scripts/ws_client.py --print-sample   # 3 готовых сообщения frame для Postman/websocat
+    python scripts/ws_client.py --print-sample   # сообщения frame для Postman/websocat
 """
 
 import argparse
@@ -105,9 +105,10 @@ async def run(args: argparse.Namespace) -> None:
 
 
 def print_sample() -> None:
-    """Три кадра «левая выше → правая выше → левая выше» = один засчитанный жест."""
-    for i, (left_y, right_y) in enumerate([(0.3, 0.7), (0.7, 0.3), (0.3, 0.7)]):
-        print(json.dumps(make_message(1730000000000 + i * 300, left_y, right_y)))
+    """Две секунды встречного движения рук с частотой 20 кадров/с."""
+    for i in range(40):
+        offset = 0.15 * math.sin(2 * math.pi * 1.5 * i / 20)
+        print(json.dumps(make_message(1730000000000 + i * 50, 0.5 + offset, 0.5 - offset)))
 
 
 def main() -> None:
@@ -120,7 +121,9 @@ def main() -> None:
     parser.add_argument("--fps", type=int, default=15)
     parser.add_argument("--frequency", type=float, default=1.5, help="полных циклов «качелей» в секунду")
     parser.add_argument("--no-stop", action="store_true", help="не вызывать «Стоп», просто оборвать сокет")
-    parser.add_argument("--print-sample", action="store_true", help="напечатать 3 сообщения и выйти")
+    parser.add_argument(
+        "--print-sample", action="store_true", help="напечатать контрольную последовательность и выйти"
+    )
     args = parser.parse_args()
 
     if args.print_sample:

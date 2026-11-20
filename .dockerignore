@@ -1,0 +1,13 @@
+**
+!backend/
+!backend/requirements.txt
+!backend/alembic.ini
+!backend/app/
+!backend/app/**
+!backend/migrations/
+!backend/migrations/**
+!cv/
+!cv/__init__.py
+!cv/gesture_detector/
+!cv/gesture_detector/**
+**/__pycache__/
