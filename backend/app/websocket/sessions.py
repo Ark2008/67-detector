@@ -17,7 +17,7 @@ from app.schemas.messages import (
     SessionReadyEvent,
 )
 from app.services.connections import Connection, session_state_event
-from app.services.game import SessionGame, SessionNotActiveError
+from app.services.game import FrameOrderError, SessionGame, SessionNotActiveError
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -112,7 +112,10 @@ async def process_message(text: str | None, game: SessionGame, cooldown_ms: int)
     except ValidationError as exc:
         return ErrorEvent(code=ErrorCode.INVALID_PAYLOAD, message=describe_validation_error(exc))
 
-    gesture = await game.handle_frame(frame)
+    try:
+        gesture = await game.handle_frame(frame)
+    except FrameOrderError as exc:
+        return ErrorEvent(code=ErrorCode.INVALID_PAYLOAD, message=str(exc))
     if gesture is None:
         return None
     return GestureDetectedEvent(score=gesture.score, detected_at=gesture.detected_at, cooldown_ms=cooldown_ms)

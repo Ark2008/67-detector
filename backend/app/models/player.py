@@ -19,5 +19,4 @@ class Player(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-# Имя уникально без учёта регистра.
 Index("players_name_lower_idx", func.lower(Player.__table__.c.name), unique=True)

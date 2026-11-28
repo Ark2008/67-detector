@@ -37,7 +37,6 @@ def swing_frames(count: int, step_ms: float = 300, start_ms: float = 0) -> list[
 
 
 def to_message(frame: dict[str, Any]) -> dict[str, Any]:
-    """Сообщение WebSocket `frame` из кадра."""
     return {"type": "frame", **frame}
 
 

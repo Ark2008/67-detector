@@ -29,7 +29,6 @@ async def feed(game: SessionGame, frames: list[dict]) -> list[int]:
 
 async def test_continuous_swinging_scores_once_per_cooldown(game: SessionGame, clock: FakeClock) -> None:
     scores = []
-    # 6 секунд непрерывных «качелей», кадр каждые 100 мс.
     for frame in swing_frames(60, step_ms=100):
         scores += await feed(game, [frame])
         clock.advance(0.1)

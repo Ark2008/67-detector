@@ -1,3 +1,4 @@
+import math
 import uuid
 from typing import Any
 
@@ -11,6 +12,7 @@ from app.config import Settings
 from app.main import create_app
 from app.models import SessionStatus
 from app.repositories.game import PlayerData, SessionData
+from scripts.ws_client import make_message
 from tests.fakes import FakeClock, InMemoryGameRepository
 from tests.helpers import make_frame, swing_messages, to_message
 
@@ -37,9 +39,6 @@ def wait_until_processed(ws: WebSocketTestSession) -> None:
     """
     ws.send_text("sync")
     assert ws.receive_json()["code"] == "invalid_payload"
-
-
-# Подключение
 
 
 def test_connect_sends_session_ready(client: TestClient, session: SessionData) -> None:
@@ -81,9 +80,6 @@ def test_new_connection_replaces_previous(client: TestClient, session: SessionDa
             assert second.receive_json()["type"] == "gesture_detected"
 
 
-# Жест и анти-дребезг
-
-
 def test_gesture_is_counted(
     client: TestClient, repository: InMemoryGameRepository, session: SessionData
 ) -> None:
@@ -99,6 +95,27 @@ def test_gesture_is_counted(
     assert event["cooldown_ms"] == 1500
     assert repository.sessions[session.id].score == 1
     assert [session_id for session_id, _ in repository.gesture_events] == [session.id]
+
+
+def test_real_detector_recovers_after_an_out_of_order_frame(
+    repository: InMemoryGameRepository, session: SessionData
+) -> None:
+    app = create_app(repository=repository)
+    with TestClient(app) as client, client.websocket_connect(url(session.id)) as ws:
+        assert ws.receive_json()["type"] == "session_ready"
+        for message in swing_messages(3):
+            ws.send_json(message)
+        wait_until_processed(ws)
+        ws.send_json(to_message(make_frame(100)))
+        assert ws.receive_json()["code"] == "invalid_payload"
+
+        for i in range(40):
+            offset = 0.15 * math.sin(2 * math.pi * 1.5 * i / 20)
+            ws.send_json(make_message(2000 + 50 * i, 0.5 + offset, 0.5 - offset))
+        ws.send_text("sync")
+        event = ws.receive_json()
+        assert (event["type"], event["score"]) == ("gesture_detected", 1)
+        assert ws.receive_json()["code"] == "invalid_payload"
 
 
 def test_gesture_during_cooldown_is_dropped(
@@ -152,9 +169,6 @@ def test_counted_gesture_frames_do_not_trigger_again(
         wait_until_processed(ws)
 
     assert repository.sessions[session.id].score == 1
-
-
-# Кадры
 
 
 def test_frames_without_hands_keep_session_alive(
@@ -248,14 +262,11 @@ def test_cv_failure_returns_internal_error_and_keeps_connection(
     app = create_app(Settings(_env_file=None), repository=repository, detect_gesture=broken_detect)
     with TestClient(app) as client, client.websocket_connect(url(session.id)) as ws:
         ws.receive_json()  # session_ready
-        for _ in range(2):
-            ws.send_json(to_message(make_frame(0)))
+        for timestamp in range(2):
+            ws.send_json(to_message(make_frame(timestamp)))
             error = ws.receive_json()
             assert error["type"] == "error"
             assert error["code"] == "internal_error"
-
-
-# Завершение сессии
 
 
 def test_stop_sends_session_state_and_closes_socket(
