@@ -34,34 +34,32 @@ export default function Game({ player }: { player: Player }) {
   const soundEnabledRef = useRef(soundEnabled)
   const [flash, setFlash] = useState(false)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
+  const musicRef = useRef<HTMLAudioElement | null>(null)
+
+  function getMusic() {
+    if (!musicRef.current) {
+      const music = new Audio('/audio/gazan-67.mp3')
+      music.loop = true
+      music.volume = 0.45
+      music.preload = 'auto'
+      musicRef.current = music
+    }
+    return musicRef.current
+  }
+
+  function stopMusic() {
+    const music = musicRef.current
+    if (music) {
+      music.pause()
+      music.currentTime = 0
+    }
+  }
 
   function gestureEffect() {
     setFlash(true)
     if (flashTimer.current) clearTimeout(flashTimer.current)
     flashTimer.current = setTimeout(() => setFlash(false), 850)
-    if (!soundEnabledRef.current) return
-
-    try {
-      // Короткий оригинальный сигнал, без сторонней музыкальной записи.
-      const ctx = audioContextRef.current ?? new AudioContext()
-      audioContextRef.current = ctx
-      void ctx.resume()
-      for (const [offset, frequency] of [[0, 650], [0.13, 880]]) {
-        const oscillator = ctx.createOscillator()
-        const gain = ctx.createGain()
-        const at = ctx.currentTime + offset
-        oscillator.type = 'sine'
-        oscillator.frequency.value = frequency
-        gain.gain.setValueAtTime(0.0001, at)
-        gain.gain.exponentialRampToValueAtTime(0.12, at + 0.015)
-        gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.18)
-        oscillator.connect(gain)
-        gain.connect(ctx.destination)
-        oscillator.start(at)
-        oscillator.stop(at + 0.19)
-      }
-    } catch { /* В браузере звук может быть заблокирован */ }
+    // Песня звучит во время сессии; на жест появляется визуальный эффект.
   }
 
   function toggleSound() {
@@ -69,7 +67,14 @@ export default function Game({ player }: { player: Player }) {
       const next = !previous
       soundEnabledRef.current = next
       try { localStorage.setItem('six-seven-sound', next ? 'on' : 'off') }
-      catch { /* Настройка действует хотя бы до обновления */ }
+      catch { /* настройка действует до обновления */ }
+      if (!next) {
+        getMusic().pause()
+      } else if (sessionRef.current) {
+        void getMusic().play().catch(() => {
+          setError('Браузер заблокировал музыку. Попробуй выключить и включить звук ещё раз.')
+        })
+      }
       return next
     })
   }
@@ -111,7 +116,8 @@ export default function Game({ player }: { player: Player }) {
       stopSocket()
       stopCamera()
       if (flashTimer.current) clearTimeout(flashTimer.current)
-      void audioContextRef.current?.close()
+      stopMusic()
+      musicRef.current = null
     }
   }, [])
 
@@ -139,8 +145,8 @@ export default function Game({ player }: { player: Player }) {
                 : 'Right',
             score: result.handedness[index]?.[0]?.score ?? 0,
             landmarks: landmarks.map(point => ({
-              x: point.x,
-              y: point.y,
+              x: Math.max(0, Math.min(1, point.x)),
+              y: Math.max(0, Math.min(1, point.y)),
               z: point.z,
             })),
           }))
@@ -171,12 +177,11 @@ export default function Game({ player }: { player: Player }) {
     setError('')
 
     try {
-      // Вызов из нажатия кнопки разрешает воспроизведение звука браузером.
+      // Запуск по нажатию кнопки помогает браузеру разрешить воспроизведение.
       if (soundEnabledRef.current) {
-        try {
-          audioContextRef.current ??= new AudioContext()
-          void audioContextRef.current.resume()
-        } catch { /* Без звука игра продолжает работать */ }
+        void getMusic().play().catch(() => {
+          setError('Не удалось воспроизвести музыку. Проверь файл public/audio/gazan-67.mp3.')
+        })
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -231,6 +236,7 @@ export default function Game({ player }: { player: Player }) {
             sessionRef.current = null
             setSocketStatus('Сессия завершена')
             stopCamera()
+            stopMusic()
           }
 
           if (message.type === 'error') {
@@ -250,6 +256,7 @@ export default function Game({ player }: { player: Player }) {
     } catch (err) {
       stopCamera()
       stopSocket()
+      stopMusic()
       setError(err instanceof Error ? err.message : 'Не удалось начать сессию')
     } finally {
       setBusy(false)
@@ -276,6 +283,7 @@ export default function Game({ player }: { player: Player }) {
 
       stopSocket()
       stopCamera()
+      stopMusic()
 
       navigate('/rating')
     } catch (err) {
@@ -333,15 +341,15 @@ export default function Game({ player }: { player: Player }) {
 
           <section className="stat-card sound-card">
             <div>
-              <b>Звуковой эффект</b>
-              <small>Сигнал при распознавании 67</small>
+              <b>Звук и музыка</b>
+              <small>GAZAN — 67 (Six Seven)</small>
             </div>
             <button
               type="button"
               className={`toggle ${soundEnabled ? 'toggle--on' : ''}`}
               role="switch"
               aria-checked={soundEnabled}
-              aria-label="Звуковые эффекты"
+              aria-label="Музыка в игре"
               onClick={toggleSound}
             >
               <span />
