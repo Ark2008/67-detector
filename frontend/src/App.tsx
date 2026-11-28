@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import Login from './pages/Login'
 import Game from './pages/Game'
 import Rating from './pages/Rating'
+import Settings from './pages/Settings'
 import { createPlayer, type Player } from './services/api'
 import './index.css'
 import './App.css'
@@ -26,7 +27,7 @@ function Header({ player, logout }: { player: Player; logout: () => void }) {
   return <header className="site-header">
     <div className="header-start"><button className="text-link" onClick={() => navigate(pathname === '/rating' ? '/game' : '/rating')}>← {pathname === '/rating' ? 'К игре' : 'Рейтинг'}</button></div>
     <div className="header-center"><Logo /></div>
-    <div className="header-end"><div className="player-pill"><span className="avatar">{player.name.slice(0, 1).toUpperCase()}</span><span className="player-name">{player.name}</span></div><button className="logout" onClick={logout} title="Выйти" aria-label="Выйти">↗</button></div>
+    <div className="header-end"><div className="player-pill"><span className="avatar">{player.name.slice(0, 1).toUpperCase()}</span><span className="player-name">{player.name}</span></div><button className="text-link settings-nav" onClick={() => navigate('/settings')}>Настройки</button><button className="logout" onClick={logout} title="Выйти" aria-label="Выйти">↗</button></div>
   </header>
 }
 function Shell({ player, logout, children }: { player: Player; logout: () => void; children: ReactNode }) {
@@ -41,6 +42,10 @@ function RoutedApp() {
     setPlayer(result)
     navigate('/game', { replace: true })
   }
+  function updatePlayer(updated: Player) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)) } catch { /* storage unavailable */ }
+    setPlayer(updated)
+  }
   function logout() {
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* still works this tab */ }
     setPlayer(null)
@@ -49,6 +54,7 @@ function RoutedApp() {
   return <Routes>
     <Route path="/login" element={player ? <Navigate to="/game" replace /> : <Login onLogin={login} logo={<Logo large />} />} />
     <Route path="/game" element={player ? <Shell player={player} logout={logout}><Game player={player} /></Shell> : <Navigate to="/login" replace />} />
+    <Route path="/settings" element={player ? <Shell player={player} logout={logout}><Settings player={player} onUpdate={updatePlayer} onDeleted={logout} /></Shell> : <Navigate to="/login" replace />} />
     <Route path="/rating" element={player ? <Shell player={player} logout={logout}><Rating player={player} /></Shell> : <Navigate to="/login" replace />} />
     <Route path="*" element={<Navigate to={player ? '/game' : '/login'} replace />} />
   </Routes>

@@ -6,6 +6,10 @@ export interface GameSession { session_id: string; status: string; score: number
 export interface RatingPlayer { player_id: string; name: string; total_score: number; best_session_score: number }
 export interface RatingsResponse { players: RatingPlayer[] }
 
+export class ApiError extends Error {
+  constructor(public status: number, message: string) { super(message); this.name = 'ApiError' }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   let response: Response
   try {
@@ -19,7 +23,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!response.ok) {
     let detail = ''
     try { const data = await response.json(); detail = typeof data?.detail === 'string' ? data.detail : '' } catch { /* plain-text error */ }
-    throw new Error(`Сервер вернул ошибку ${response.status}${detail ? `: ${detail}` : ''}`)
+    throw new ApiError(response.status, `Сервер вернул ошибку ${response.status}${detail ? `: ${detail}` : ''}`)
   }
   return response.json() as Promise<T>
 }
@@ -33,4 +37,17 @@ export function getSessionSocketUrl(sessionId: string) {
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   url.pathname = `/ws/sessions/${encodeURIComponent(sessionId)}`
   return url.toString()
+}
+
+// PATCH/DELETE добавляются в backend отдельно. Сверьте контракт перед отправкой PR.
+export function renamePlayer(playerId: string, name: string) {
+  return request<Player>(`/players/${encodeURIComponent(playerId)}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) })
+}
+export async function deletePlayer(playerId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/players/${encodeURIComponent(playerId)}`, { method: 'DELETE' }).catch(() => {
+    throw new Error('Не удалось связаться с сервером.')
+  })
+  if (!response.ok) {
+    throw new ApiError(response.status, `Не удалось удалить профиль: ${response.status}`)
+  }
 }

@@ -75,3 +75,26 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--pink); outl
 @media(max-width:440px){.site-header .brand-name{display:none}.site-header{grid-template-columns:1fr auto 1fr}.game-sidebar{grid-template-columns:1fr}.score-card,.small-stats{min-height:auto}.camera-panel{min-height:340px}.gesture-title{font-size:75px}.camera-caption{font-size:9px}.login-subtitle{font-size:13px}}
 
 .ranking-list{display:flex;flex-direction:column;gap:10px;margin:38px auto 30px;max-width:620px;text-align:left}.ranking-row{display:flex;align-items:center;gap:14px;background:#191920;padding:14px 18px;border-radius:14px}.ranking-row--me{border:2px solid var(--lime);padding:12px 16px}.ranking-place{width:20px;color:#a0a0ad;font-weight:800}.ranking-avatar{display:grid;place-items:center;background:#292932;border-radius:50%;width:33px;height:33px;font-weight:800}.ranking-name{flex:1;min-width:0;overflow-wrap:anywhere}.ranking-score{font-size:24px;color:var(--lime)}
+
+/* New settings screen and confirmed gesture effect */
+.settings-nav { white-space:nowrap; }
+.settings-page {max-width:750px;padding-top:45px;}
+.settings-heading {text-align:center;margin-bottom:30px;}
+.settings-heading h1 {font-size:clamp(30px,6vw,48px);margin:18px 0 6px;}
+.settings-heading p {color:var(--muted);margin:0;}
+.settings-card {background:var(--card);padding:24px;border:1px solid var(--line);border-radius:20px;margin-bottom:18px;}
+.settings-card h2 {font-size:21px;margin:0 0 16px;}
+.settings-form {display:flex;flex-direction:column;gap:12px;}
+.settings-form label {color:var(--muted);font-size:13px;}
+.settings-form input {width:100%;border:2px solid var(--lime);border-radius:12px;background:#111117;color:#fff;height:48px;padding:0 14px;font-size:16px;}
+.settings-success {color:var(--lime);font-size:13px;}
+.settings-danger {border-color:#6e2c48;}
+.btn-danger {background:#8e2750;color:white;}
+.delete-confirm {margin-top:15px;}
+.delete-actions {display:flex;gap:10px;}
+.camera-effect-wrap {position:relative;min-width:0;}
+.gesture-flash {position:absolute;z-index:8;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-size:clamp(110px,16vw,220px);font-weight:1000;letter-spacing:-.1em;color:var(--pink);text-shadow:8px 8px 0 var(--lime),0 0 50px #f3469180;animation:gesture-pop .8s ease-out forwards;}
+.gesture-flash small {font-size:clamp(28px,4vw,60px);color:var(--lime);align-self:center;transform:translate(20px,-70px);text-shadow:none;}
+@keyframes gesture-pop {0%{opacity:0;transform:scale(.5) rotate(-14deg)}18%{opacity:1;transform:scale(1.15) rotate(-8deg)}70%{opacity:1;transform:scale(1) rotate(-6deg)}100%{opacity:0;transform:scale(1.1) rotate(-6deg)}}
+@media(prefers-reduced-motion:reduce){.gesture-flash{animation:none;opacity:1}}
+@media(max-width:520px){.delete-actions{flex-direction:column}.settings-card{padding:17px}.settings-nav{font-size:11px}}
